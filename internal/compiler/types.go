@@ -3,6 +3,7 @@ package compiler
 import (
 	"github.com/NingXia-XinQiCyberClub/ouroboros/internal/evidence"
 	"github.com/NingXia-XinQiCyberClub/ouroboros/internal/frontier"
+	"github.com/NingXia-XinQiCyberClub/ouroboros/internal/toolchain"
 )
 
 type SemanticAction string
@@ -39,6 +40,7 @@ type PlanNode struct {
 	RunCommand       []string
 	RunTimeoutMS     int
 	Parser           string
+	Dependencies     []toolchain.Dependency
 	InputNodeIDs     []string
 	ExpectedEvidence []evidence.NodeType
 	SelectionScore   float64
