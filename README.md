@@ -4,7 +4,7 @@
 
 # Ouroboros · 授权安全测试 IDE 与编译器
 
-Ouroboros 由宁夏大学鑫启网安俱乐部（[NingXia-XinQiCyberClub](https://github.com/NingXia-XinQiCyberClub)）发起，是一个面向**授权渗透测试、攻防演练与 CTF 竞赛**的 TUI/GUI 双形态安全工作台。它把"明确范围的目标"编译成可审计的计划、工具链动作、运行时工作节点状态、可回放证据与操作员控制的执行门。
+Ouroboros 由宁夏大学鑫启网安俱乐部（[NingXia-XinQiCyberClub](https://github.com/NingXia-XinQiCyberClub)）发起，由SeaC-25主要开发，是一个面向**授权渗透测试、攻防演练与 CTF 竞赛**的 TUI/GUI 双形态安全工作台。它把"明确范围的目标"编译成可审计的计划、工具链动作、运行时工作节点状态、可回放证据与操作员控制的执行门。
 
 > **合规声明**：本项目仅用于已获书面授权的测试环境、靶场与教学研究。使用前请确认你已获得目标所有者的明确授权，并遵守所在地法律法规。严禁对任何未授权系统实施测试。
 
