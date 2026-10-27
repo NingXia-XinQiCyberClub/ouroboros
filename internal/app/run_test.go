@@ -1513,7 +1513,6 @@ execution:
 }
 
 func TestRunWorkspaceRequireSafetyAuthorizationBlocksMissingSafetyBypassAndPersistsAudit(t *testing.T) {
-	t.Skip("Safety authorization checks disabled")
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), "workspace")
 	if err := InitWorkspace(root); err != nil {
@@ -3270,7 +3269,6 @@ execution:
 }
 
 func TestRunWorkspaceRequireSafetyAuthorizationRechecksBeforeWorkerLeaseAcquire(t *testing.T) {
-	t.Skip("Safety authorization checks disabled")
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), "workspace")
 	if err := InitWorkspace(root); err != nil {
@@ -3312,7 +3310,6 @@ func TestRunWorkspaceRequireSafetyAuthorizationRechecksBeforeWorkerLeaseAcquire(
 }
 
 func TestRunWorkspaceRequireSafetyAuthorizationRechecksBeforeWorkerLeaseComplete(t *testing.T) {
-	t.Skip("Safety authorization checks disabled")
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), "workspace")
 	if err := InitWorkspace(root); err != nil {
@@ -3569,7 +3566,6 @@ func TestUpdateWorkerLeaseHeartbeatRefreshesActiveLeaseAndPreventsReclaim(t *tes
 }
 
 func TestUpdateWorkerLeaseHeartbeatRequiresCurrentSafetyAuthorizationForDisabledBoundaries(t *testing.T) {
-	t.Skip("Safety authorization checks disabled")
 	root := filepath.Join(t.TempDir(), "workspace")
 	now := time.Date(2026, 5, 30, 12, 22, 0, 0, time.UTC)
 	if err := InitWorkspace(root); err != nil {
@@ -3716,7 +3712,6 @@ func TestReleaseWorkerLeaseCompletesActiveLeaseAndPreventsReclaim(t *testing.T) 
 }
 
 func TestReleaseWorkerLeaseRequiresCurrentSafetyAuthorizationForDisabledBoundaries(t *testing.T) {
-	t.Skip("Safety authorization checks disabled")
 	root := filepath.Join(t.TempDir(), "workspace")
 	now := time.Date(2026, 5, 30, 12, 27, 30, 0, time.UTC)
 	if err := InitWorkspace(root); err != nil {
@@ -4113,7 +4108,6 @@ func TestExecuteWorkerLeaseReclaimDispatchRevalidatesAndReclaimsStaleLease(t *te
 }
 
 func TestExecuteWorkerLeaseReclaimDispatchRequiresCurrentSafetyAuthorizationBeforeLeaseMutation(t *testing.T) {
-	t.Skip("Safety authorization checks disabled")
 	root := filepath.Join(t.TempDir(), "workspace")
 	now := time.Date(2026, 5, 30, 14, 35, 0, 0, time.UTC)
 	staleAfter := 5 * time.Minute
@@ -6604,7 +6598,7 @@ execution:
 			"operation=port_scan",
 			"parser=naabu_jsonl",
 			"dep=naabu",
-			"target_kind=host",
+			"target_kind=cidr",
 			"scope_target_kind=cidr",
 		} {
 			if !strings.Contains(payload.Transcript, want) {
@@ -13015,7 +13009,7 @@ func expectedBuiltInDiscoverPlanNodes() []expectedBuiltInDiscoverPlanNode {
 			AdapterID:      "managed_binary",
 			Operation:      "port_scan",
 			ParserID:       "naabu_jsonl",
-			TargetKind:     "host",
+			TargetKind:     "cidr",
 			DependencyName: "naabu",
 			DependencyKind: "binary",
 		},

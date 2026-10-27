@@ -504,6 +504,9 @@ func ValidateProviderConfig(config ProviderConfig) error {
 	if enabled == 0 {
 		return errors.New("at least one provider must be enabled")
 	}
+	if _, err := providerRoutingStrategy(config); err != nil {
+		return fmt.Errorf("provider routing strategy is not supported: %s", strings.TrimSpace(config.Routing.Strategy))
+	}
 	return nil
 }
 

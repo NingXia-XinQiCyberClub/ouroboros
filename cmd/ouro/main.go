@@ -1226,6 +1226,7 @@ type doctorJSONReport struct {
 	Ready                      bool                     `json:"ready"`
 	Errors                     []string                 `json:"errors"`
 	Warnings                   []string                 `json:"warnings"`
+	RequireSafetyAuthorization bool                     `json:"require_safety_authorization"`
 	SafetyBypasses             []app.DoctorSafetyBypass `json:"safety_bypasses"`
 	StrictGate                 doctorJSONStrictGate     `json:"strict_gate"`
 }
@@ -1245,6 +1246,7 @@ func printDoctorJSON(out io.Writer, workspace string, report app.DoctorReport, r
 		Warnings:                   append([]string{}, report.Warnings...),
 		SafetyBypasses:             append([]app.DoctorSafetyBypass{}, report.SafetyBypasses...),
 		StrictGate:                 doctorJSONStrictGateFor(report, requireSafetyAuthorization),
+		RequireSafetyAuthorization: requireSafetyAuthorization,
 	}
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
@@ -1953,11 +1955,13 @@ func runOptionsFromCommand(cmd *cobra.Command, action compiler.SemanticAction, d
 	options := app.RunOptions{
 		Action:                     action,
 		DeferReportProjection:      deferReportProjection,
+		RequireSafetyAuthorization: requireSafetyAuthorization,
 	}
 	if !providerGenerate {
 		return options, nil
 	}
 	if strings.TrimSpace(providerGeneratePrompt) == "" {
+		return app.RunOptions{}, fmt.Errorf("provider generation prompt is required")
 	}
 	if providerGenerateMaxTokens < 0 {
 		return app.RunOptions{}, fmt.Errorf("provider generation max_tokens must be non-negative")

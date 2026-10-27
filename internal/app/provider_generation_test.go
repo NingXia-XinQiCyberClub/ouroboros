@@ -505,7 +505,6 @@ providers:
 }
 
 func TestValidateProviderConfigChecksRoutingStrategy(t *testing.T) {
-	t.Skip("Safety authorization checks disabled")
 	base := ProviderConfig{
 		Version: 1,
 		Providers: []Provider{{
