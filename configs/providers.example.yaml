@@ -1,10 +1,12 @@
-﻿version: 1
+version: 1
 providers:
-  - name: web-ai-media-editor
+  # OpenAI 兼容 provider 示例：填入你自己的接入点与密钥环境变量名。
+  # 密钥本身只经环境变量注入，providers.yaml 永远不落盘密钥值。
+  - name: my-openai-compatible
     type: openai_compatible
-    model: claude-opus-4-7
-    base_url: https://niuwa88.vip/v1
-    api_key_env: OURO_WEB_AI_MEDIA_EDITOR_KEY
+    model: your-model-name
+    base_url: https://your-provider.example/v1
+    api_key_env: OURO_PROVIDER_API_KEY
     timeout_ms: 30000
     context_window_tokens: 32768
     capabilities:
@@ -12,3 +14,7 @@ providers:
       - code
       - reasoning
     enabled: true
+  - name: offline
+    type: offline
+    model: offline-model
+    enabled: false
