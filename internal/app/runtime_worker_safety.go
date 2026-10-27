@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+// requireRuntimeWorkerSideEffectSafetyAuthorization gates dangerous scope
+// configurations (target_policy: disabled / isolation: disabled) behind a
+// signed authorization.yaml. Restored from 98e79d9: the "gates removed"
+// stub silently disabled all 18 call sites while doctor/tests still
+// documented the authorization contract.
 func requireRuntimeWorkerSideEffectSafetyAuthorization(root string, now time.Time) error {
 	config, err := LoadScopeConfig(filepath.Join(root, "scope.yaml"))
 	if err != nil {
@@ -38,7 +43,6 @@ func requireRuntimeWorkerSideEffectSafetyAuthorization(root string, now time.Tim
 func defaultRuntimeWorkerSafetyScopeConfig() ScopeConfig {
 	config := ScopeConfig{Version: 1}
 	config.Scope.TargetPolicy = "enforce"
-	config.Scope.Targets = []ScopeTarget{}
 	config.Execution.Isolation = "process"
 	return config
 }

@@ -41,17 +41,32 @@ type RunResult struct {
 }
 
 type RunOptions struct {
-	OnEvent                                func(eventlog.Event) error
-	OnSnapshot                             func(eventlog.ReplaySnapshot) error
-	ToolRunner                             ToolExecutionRunner
-	ToolConcurrency                        int
-	Action                                 compiler.SemanticAction
-	PauseController                        *RunPauseController
-	DeferReportProjection                  bool
-	RequireSafetyAuthorization             bool
-	EnableProviderGeneration               bool
-	ProviderGenerationPrompt               string
-	ProviderGenerationSystemPrompt         string
+	// snapshotThrottle coalesces OnSnapshot rebuilds during a run: without
+	// it every appended event rebuilds the full replay snapshot (O(n²)
+	// JSON decoding over the run). Pointer: RunOptions travels by value and
+	// the throttle state must be shared across those copies.
+	snapshotThrottle *snapshotThrottle
+	// toolchainManifests carries the manifests loaded once at run entry so
+	// downstream stages reuse them instead of re-reading the toolchain
+	// directory. Internal: set by RunWorkspaceWithOptions, callers leave
+	// it unset.
+	toolchainManifests             []toolchain.Manifest
+	OnEvent                        func(eventlog.Event) error
+	OnSnapshot                     func(eventlog.ReplaySnapshot) error
+	ToolRunner                     ToolExecutionRunner
+	ToolConcurrency                int
+	Action                         compiler.SemanticAction
+	PauseController                *RunPauseController
+	DeferReportProjection          bool
+	RequireSafetyAuthorization     bool
+	EnableProviderGeneration       bool
+	ProviderGenerationPrompt       string
+	ProviderGenerationSystemPrompt string
+	// ToolParameters carries per-operation request shapes for native
+	// handlers that take caller-specified input. Keyed by operation ID
+	// (e.g. "http_observe" → {"spec": {...json...}}); ignored by handlers
+	// that do not read parameters.
+	ToolParameters                         map[string]map[string]string
 	ProviderGenerationMaxTokens            int
 	ProviderGenerationMaxEstimatedCostUSD  *float64
 	ProviderGenerationRecordUsage          bool
@@ -170,7 +185,11 @@ type ToolExecutionRequest struct {
 	ResourceMemoryMB         int
 	ResourceLimitCPUUnits    int
 	ResourceLimitMemoryMB    int
-	catalogInvocation        bool
+	// Parameters carries per-operation request shapes supplied by the
+	// operator/model (RunOptions.ToolParameters). Native handlers that take
+	// caller-specified input (http_observe) read their spec from here.
+	Parameters        map[string]string
+	catalogInvocation bool
 }
 
 type ToolExecutionResult struct {
@@ -262,13 +281,31 @@ type ProviderAdapter interface {
 	Prepare(context.Context, Provider) (ProviderRuntime, error)
 }
 
+// RunWorkspace is the zero-option convenience entry used by tests and
+// simple embedders; the option-carrying path is RunWorkspaceWithOptions.
 func RunWorkspace(ctx context.Context, root string) (RunResult, error) {
 	return RunWorkspaceWithOptions(ctx, root, RunOptions{})
 }
 
 func RunWorkspaceWithOptions(ctx context.Context, root string, options RunOptions) (RunResult, error) {
+	// NOTE: OnSnapshot stays unthrottled here — it is a per-event contract
+	// and some consumers use it as a control-flow signal. Display consumers
+	// (the TUI) opt into coalescing via wrapSnapshotThrottle at registration.
 	if err := validateRunProviderGenerationOptions(options); err != nil {
 		return RunResult{}, err
+	}
+	// Environment-variable parameter channel (AGENTS.md env-first rule):
+	// OURO_HTTP_OBSERVE_SPEC carries the http_observe request shape as JSON
+	// so an operator or the model process can parameterize the observation
+	// primitive without CLI flag plumbing.
+	if spec := strings.TrimSpace(os.Getenv("OURO_HTTP_OBSERVE_SPEC")); spec != "" {
+		if options.ToolParameters == nil {
+			options.ToolParameters = map[string]map[string]string{}
+		}
+		if options.ToolParameters["http_observe"] == nil {
+			options.ToolParameters["http_observe"] = map[string]string{}
+		}
+		options.ToolParameters["http_observe"]["spec"] = spec
 	}
 	doctor, err := DoctorWorkspaceWithOptions(root, DoctorOptions{RequireSafetyAuthorization: options.RequireSafetyAuthorization})
 	if err != nil {
@@ -300,6 +337,7 @@ func RunWorkspaceWithOptions(ctx context.Context, root string, options RunOption
 	if err != nil {
 		return RunResult{}, fmt.Errorf("load scope config: %w", err)
 	}
+	options.toolchainManifests = manifests
 	if err := ValidateScopeConfig(scopeConfig); err != nil {
 		return RunResult{}, fmt.Errorf("invalid scope config: %w", err)
 	}
@@ -343,10 +381,9 @@ func RunWorkspaceWithOptions(ctx context.Context, root string, options RunOption
 		if err := appendRunEvent(ctx, store, stageEventWithReason(runID, "report-projection", "Project evidence graph into Markdown report", "skipped", "deferred"), options, &persistedEvents); err != nil {
 			return RunResult{}, err
 		}
-		replayedEvents, err := store.Replay(ctx, runID)
-		if err != nil {
-			return RunResult{}, err
-		}
+		// Same lockstep invariant as the non-deferred path: the in-memory
+		// mirror equals the replayed event list, so skip the SQLite read.
+		replayedEvents := persistedEvents
 		snapshot, err := eventlog.BuildReplaySnapshot(replayedEvents)
 		if err != nil {
 			return RunResult{}, err
@@ -369,10 +406,9 @@ func RunWorkspaceWithOptions(ctx context.Context, root string, options RunOption
 		return RunResult{}, err
 	}
 
-	replayedEvents, err := store.Replay(ctx, runID)
-	if err != nil {
-		return RunResult{}, err
-	}
+	// The mirror is in lockstep with the store, so build the projection
+	// snapshot from it instead of re-reading every event from SQLite.
+	replayedEvents := persistedEvents
 	snapshot, err := eventlog.BuildReplaySnapshot(replayedEvents)
 	if err != nil {
 		return RunResult{}, err
@@ -397,10 +433,10 @@ func RunWorkspaceWithOptions(ctx context.Context, root string, options RunOption
 	if err := appendRunEvent(ctx, store, stageEvent(runID, "report-projection", "Project evidence graph into Markdown report", "completed"), options, &persistedEvents); err != nil {
 		return RunResult{}, err
 	}
-	replayedEvents, err = store.Replay(ctx, runID)
-	if err != nil {
-		return RunResult{}, err
-	}
+	// persistedEvents is kept in lockstep with the store by appendRunEvent
+	// (Append returns the fully stamped event), so the final projection
+	// reuses it instead of re-reading every event from SQLite.
+	replayedEvents = persistedEvents
 	snapshot, err = eventlog.BuildReplaySnapshot(replayedEvents)
 	if err != nil {
 		return RunResult{}, err
@@ -483,7 +519,11 @@ func validateProviderMetadataOnly(ctx context.Context, provider Provider) error 
 	case "offline":
 		return nil
 	case providerTypeOpenAICompatible:
-		baseURL, err := parseOpenAICompatibleProviderBaseURL(provider.BaseURL)
+		baseURLValue, err := effectiveProviderBaseURL(provider)
+		if err != nil {
+			return fmt.Errorf("provider %s base_url is invalid: %w", provider.Name, err)
+		}
+		baseURL, err := parseOpenAICompatibleProviderBaseURL(baseURLValue)
 		if err != nil {
 			return fmt.Errorf("provider %s base_url is invalid: %w", provider.Name, err)
 		}
@@ -661,7 +701,7 @@ func runToolPlanNodesExecutionStage(ctx context.Context, root string, runID stri
 	if strings.TrimSpace(stageDescription) == "" {
 		stageDescription = "Execute compiled tool plan nodes"
 	}
-	requests := toolExecutionRequests(root, runID, nodes, targets, exclusions, targetPolicy, isolationMode, container, resourceLimits, packPolicies, workerPools)
+	requests := toolExecutionRequests(root, runID, nodes, targets, exclusions, targetPolicy, isolationMode, container, resourceLimits, packPolicies, workerPools, options.ToolParameters)
 	var lifecycleMu sync.Mutex
 	appendLifecycleEvent := func(event eventlog.Event) error {
 		lifecycleMu.Lock()
@@ -797,6 +837,12 @@ func executeToolRequests(ctx context.Context, requests []ToolExecutionRequest, c
 	var wg sync.WaitGroup
 
 	go func() {
+		// NOTE: fan-out deliberately stays one-goroutine-per-request. Bounding
+		// spawns with a prefetch semaphore would hold a slot while a request
+		// waits for pack resources, breaking the admission yield contract
+		// (a compatible worker must start while another waits — guarded by
+		// TestRunWorkspaceDoesNotOccupyGlobalWorkerSlotWhileWaitingForResources).
+		// Parked stacks are cheap; the yield semantics are not for sale.
 		for index, request := range requests {
 			wg.Add(1)
 			go func(index int, request ToolExecutionRequest) {
@@ -1043,15 +1089,15 @@ func workerConcurrencyKey(request ToolExecutionRequest) string {
 	return strings.ToLower(strings.TrimSpace(request.WorkerID))
 }
 
-func toolExecutionRequests(root string, runID string, nodes []compiler.PlanNode, targets []ScopeTarget, exclusions []string, targetPolicy string, isolationMode string, container ContainerExecutionConfig, resourceLimits ExecutionResourceLimits, packPolicies []PackExecutionPolicy, workerPools []WorkerPoolPolicy) []ToolExecutionRequest {
+func toolExecutionRequests(root string, runID string, nodes []compiler.PlanNode, targets []ScopeTarget, exclusions []string, targetPolicy string, isolationMode string, container ContainerExecutionConfig, resourceLimits ExecutionResourceLimits, packPolicies []PackExecutionPolicy, workerPools []WorkerPoolPolicy, toolParameters map[string]map[string]string) []ToolExecutionRequest {
 	requests := make([]ToolExecutionRequest, 0, len(nodes))
 	for _, node := range nodes {
-		requests = append(requests, toolExecutionRequest(root, runID, node, targets, exclusions, targetPolicy, isolationMode, container, resourceLimits, packPolicies, workerPools))
+		requests = append(requests, toolExecutionRequest(root, runID, node, targets, exclusions, targetPolicy, isolationMode, container, resourceLimits, packPolicies, workerPools, toolParameters[strings.TrimSpace(node.Operation)]))
 	}
 	return requests
 }
 
-func toolExecutionRequest(root string, runID string, node compiler.PlanNode, targets []ScopeTarget, exclusions []string, targetPolicy string, isolationMode string, container ContainerExecutionConfig, resourceLimits ExecutionResourceLimits, packPolicies []PackExecutionPolicy, workerPools []WorkerPoolPolicy) ToolExecutionRequest {
+func toolExecutionRequest(root string, runID string, node compiler.PlanNode, targets []ScopeTarget, exclusions []string, targetPolicy string, isolationMode string, container ContainerExecutionConfig, resourceLimits ExecutionResourceLimits, packPolicies []PackExecutionPolicy, workerPools []WorkerPoolPolicy, parameters map[string]string) ToolExecutionRequest {
 	policy, hasPolicy := packExecutionPolicyForManifest(node.ManifestName, packPolicies)
 	policyMode := ""
 	policyReason := ""
@@ -1097,12 +1143,8 @@ func toolExecutionRequest(root string, runID string, node compiler.PlanNode, tar
 		ResourceMemoryMB:         resourceMemoryMB,
 		ResourceLimitCPUUnits:    resourceLimits.CPUUnits,
 		ResourceLimitMemoryMB:    resourceLimits.MemoryMB,
+		Parameters:               parameters,
 	}
-}
-
-func workerIDForManifest(manifestName string, workerPools []WorkerPoolPolicy) string {
-	workerID, _ := workerPoolPlacementForManifest(manifestName, workerPools)
-	return workerID
 }
 
 func workerPoolPlacementForManifest(manifestName string, workerPools []WorkerPoolPolicy) (string, int) {
@@ -1684,7 +1726,11 @@ func (openAICompatibleProviderAdapter) Prepare(ctx context.Context, provider Pro
 	if err := ctx.Err(); err != nil {
 		return ProviderRuntime{}, err
 	}
-	baseURL, err := parseOpenAICompatibleProviderBaseURL(provider.BaseURL)
+	baseURLValue, err := effectiveProviderBaseURL(provider)
+	if err != nil {
+		return ProviderRuntime{}, fmt.Errorf("provider %s base_url is invalid: %w", provider.Name, err)
+	}
+	baseURL, err := parseOpenAICompatibleProviderBaseURL(baseURLValue)
 	if err != nil {
 		return ProviderRuntime{}, fmt.Errorf("provider %s base_url is invalid: %w", provider.Name, err)
 	}
@@ -1710,10 +1756,6 @@ func (openAICompatibleProviderAdapter) Prepare(ctx context.Context, provider Pro
 		Model:        provider.Model,
 		Capabilities: NormalizeProviderCapabilities(provider.Capabilities),
 	}, nil
-}
-
-func PrepareProviderRuntime(ctx context.Context, config ProviderConfig) (ProviderRuntime, error) {
-	return PrepareProviderRuntimeWithOptions(ctx, config, ProviderRuntimeOptions{})
 }
 
 func PrepareProviderRuntimeWithOptions(ctx context.Context, config ProviderConfig, options ProviderRuntimeOptions) (ProviderRuntime, error) {

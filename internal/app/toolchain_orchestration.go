@@ -59,6 +59,7 @@ func CreateToolchainInstallOrchestration(root string, options ToolchainInstallOr
 		}
 		return orchestration, nil
 	}
+
 	orchestration.Status = "completed"
 	orchestration.Mode = "execute"
 	dispatch, err := createToolchainInstallDispatch(root, dispatchPlan)

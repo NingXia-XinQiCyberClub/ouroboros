@@ -640,6 +640,9 @@ type ToolCompilePreviewOptions struct {
 	DomainPriorities []compiler.DomainPriority
 	FrontierScores   []compiler.CandidateFrontierScore
 	HistoricalStats  []compiler.CandidateHistory
+	// Manifests optionally supplies workspace toolchain manifests already
+	// loaded by the caller; when nil, PreviewToolCompilePlan loads them.
+	Manifests []toolchain.Manifest
 }
 
 type ToolCompilePreview struct {
@@ -1159,9 +1162,13 @@ func PreviewToolCompilePlan(root string, options ToolCompilePreviewOptions) (Too
 	if strings.TrimSpace(string(action)) == "" {
 		action = compiler.ActionDiscoverAssets
 	}
-	manifests, err := toolchain.LoadManifests(filepath.Join(root, "toolchain"))
-	if err != nil {
-		return ToolCompilePreview{}, fmt.Errorf("load toolchain manifests: %w", err)
+	manifests := options.Manifests
+	if manifests == nil {
+		loaded, err := toolchain.LoadManifests(filepath.Join(root, "toolchain"))
+		if err != nil {
+			return ToolCompilePreview{}, fmt.Errorf("load toolchain manifests: %w", err)
+		}
+		manifests = loaded
 	}
 	plan, err := compiler.NewCompiler().Compile(compiler.CompileRequest{
 		Action: action,
@@ -2401,10 +2408,6 @@ func toolCompilePreviewSignalPathWithConfidence(path ToolCompilePreviewSignalPat
 
 func toolCompilePreviewSignalPathScore(path ToolCompilePreviewSignalPath) float64 {
 	return frontier.Score(path.toCandidatePath())
-}
-
-func toolCompilePreviewIntentDomain(intent toolCompilePreviewReplayIntentPayload) (frontier.Domain, bool) {
-	return toolCompilePreviewDomainForFields(intent.Domain, intent.Target, firstNonEmptyString(intent.IntentID, intent.ID))
 }
 
 func toolCompilePreviewDomainForFields(domainText, targetText, idText string) (frontier.Domain, bool) {
@@ -6046,10 +6049,6 @@ func releaseManagedToolBundleStatusFromError(dir string, manifestPath string, er
 		ReleaseManifestPath: manifestPath,
 		Error:               err.Error(),
 	}
-}
-
-func releaseManagedToolBundleStatusForWorkspace(root string, bundle ReleaseManagedToolBundle) ReleaseManagedToolBundleStatus {
-	return releaseManagedToolBundleStatusForWorkspaceWithExpectedSHA(root, bundle, "")
 }
 
 func releaseManagedToolBundleStatusForWorkspaceWithExpectedSHA(root string, bundle ReleaseManagedToolBundle, expectedSHA string) ReleaseManagedToolBundleStatus {

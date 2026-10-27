@@ -80,6 +80,7 @@ type Provider struct {
 	Type                        string   `yaml:"type"`
 	Model                       string   `yaml:"model"`
 	BaseURL                     string   `yaml:"base_url,omitempty"`
+	BaseURLEnv                  string   `yaml:"base_url_env,omitempty"`
 	APIKeyEnv                   string   `yaml:"api_key_env,omitempty"`
 	TimeoutMS                   int      `yaml:"timeout_ms,omitempty"`
 	ContextWindowTokens         int      `yaml:"context_window_tokens,omitempty"`
@@ -294,6 +295,10 @@ func scopeConfigWarnings(config ScopeConfig, authorization AuthorizationConfig, 
 	return warnings
 }
 
+// scopeConfigSafetyAuthorizationErrors restores the hard gate (was stubbed
+// to always-empty together with the runtime worker gate; see
+// runtime_worker_safety.go). Dangerous modes demand a current signed
+// authorization.yaml safety_bypasses entry.
 func scopeConfigSafetyAuthorizationErrors(config ScopeConfig, authorization AuthorizationConfig, authorizationFound bool, now time.Time) []string {
 	var errors []string
 	targetPolicy, _ := normalizeScopeTargetPolicy(config.Scope.TargetPolicy)
@@ -317,6 +322,14 @@ func safetyBypassAuthorizationErrors(config AuthorizationConfig, found bool, con
 	return []string{fmt.Sprintf("missing required safety bypass authorization for %s %s; add authorization.yaml safety_bypasses entry with authorized_by and reason", control, mode)}
 }
 
+func hasCurrentSafetyBypassAuthorization(config AuthorizationConfig, found bool, control string, mode string, now time.Time) bool {
+	if !found {
+		return false
+	}
+	authorization, ok := findSafetyBypassAuthorization(config, control, mode)
+	return ok && !safetyBypassAuthorizationExpired(authorization, now)
+}
+
 func safetyBypassAuthorizationWarning(config AuthorizationConfig, found bool, control string, mode string, now time.Time) string {
 	authorization, ok := findSafetyBypassAuthorization(config, control, mode)
 	if !found || !ok {
@@ -336,14 +349,6 @@ func safetyBypassAuthorizationWarning(config AuthorizationConfig, found bool, co
 		return fmt.Sprintf("expired safety bypass authorization for %s %s; expired on %s; %s", control, mode, strings.TrimSpace(authorization.Expires), strings.Join(parts, "; "))
 	}
 	return strings.Join(parts, "; ")
-}
-
-func hasCurrentSafetyBypassAuthorization(config AuthorizationConfig, found bool, control string, mode string, now time.Time) bool {
-	if !found {
-		return false
-	}
-	authorization, ok := findSafetyBypassAuthorization(config, control, mode)
-	return ok && !safetyBypassAuthorizationExpired(authorization, now)
 }
 
 func safetyBypassAuthorizationExpired(authorization SafetyBypassAuthorization, now time.Time) bool {
@@ -388,6 +393,7 @@ func loadWorkspaceAuthorization(path string) (AuthorizationConfig, bool, error) 
 	return config, true, nil
 }
 
+// LoadAuthorizationConfig reads and decodes an authorization.yaml.
 func LoadAuthorizationConfig(path string) (AuthorizationConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -400,6 +406,8 @@ func LoadAuthorizationConfig(path string) (AuthorizationConfig, error) {
 	return config, nil
 }
 
+// ValidateAuthorizationConfig enforces the safety_bypasses schema: only the
+// two known controls, only the disabled mode, authorized_by/reason required.
 func ValidateAuthorizationConfig(config AuthorizationConfig) error {
 	if config.Version == 0 {
 		return errors.New("version is required")
@@ -433,7 +441,6 @@ func ValidateAuthorizationConfig(config AuthorizationConfig) error {
 	}
 	return nil
 }
-
 func parseSafetyBypassExpirationCutoff(expires string) (time.Time, error) {
 	expires = strings.TrimSpace(expires)
 	if expires == "" {
@@ -481,7 +488,15 @@ func ValidateProviderConfig(config ProviderConfig) error {
 			return fmt.Errorf("provider %s model is required", provider.Name)
 		}
 		if strings.TrimSpace(provider.Type) == providerTypeOpenAICompatible {
-			if _, err := parseOpenAICompatibleProviderBaseURL(provider.BaseURL); err != nil {
+			baseURLEnv := strings.TrimSpace(provider.BaseURLEnv)
+			if baseURLEnv != "" && !validProviderAPIKeyEnvName(baseURLEnv) {
+				return fmt.Errorf("provider %s base_url_env must be an environment variable name", provider.Name)
+			}
+			if strings.TrimSpace(provider.BaseURL) == "" {
+				if baseURLEnv == "" {
+					return fmt.Errorf("provider %s base_url is invalid: %w", provider.Name, errors.New("base_url is required"))
+				}
+			} else if _, err := parseOpenAICompatibleProviderBaseURL(provider.BaseURL); err != nil {
 				return fmt.Errorf("provider %s base_url is invalid: %w", provider.Name, err)
 			}
 			if provider.TimeoutMS < 0 {
@@ -536,13 +551,17 @@ func parseOpenAICompatibleProviderBaseURL(raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func EnabledProvider(config ProviderConfig) (Provider, bool) {
-	for _, provider := range config.Providers {
-		if provider.Enabled {
-			return provider, true
+// providerEffectiveBaseURL resolves the base URL in effect at call time:
+// when base_url_env names an environment variable that is set to a
+// non-empty value, that value wins; otherwise the configured base_url is
+// used. The environment is read on every call per the env-first rule.
+func providerEffectiveBaseURL(provider Provider) string {
+	if envName := strings.TrimSpace(provider.BaseURLEnv); envName != "" {
+		if value, ok := os.LookupEnv(envName); ok && strings.TrimSpace(value) != "" {
+			return value
 		}
 	}
-	return Provider{}, false
+	return provider.BaseURL
 }
 
 func writeFileIfMissing(path string, content string) error {

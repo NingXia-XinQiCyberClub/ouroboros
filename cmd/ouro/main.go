@@ -71,6 +71,7 @@ var completionFinalAcceptanceBeforePublishHook func(completionEvidenceStatus, st
 func main() {
 	cmd := newRootCommand(os.Stdout, os.Stderr)
 	if err := cmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "ouro: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -1221,14 +1222,14 @@ func newDoctorCommand(out io.Writer) *cobra.Command {
 }
 
 type doctorJSONReport struct {
-	SchemaVersion              int                      `json:"schema_version"`
-	Workspace                  string                   `json:"workspace"`
-	Ready                      bool                     `json:"ready"`
-	Errors                     []string                 `json:"errors"`
-	Warnings                   []string                 `json:"warnings"`
-	RequireSafetyAuthorization bool                     `json:"require_safety_authorization"`
-	SafetyBypasses             []app.DoctorSafetyBypass `json:"safety_bypasses"`
-	StrictGate                 doctorJSONStrictGate     `json:"strict_gate"`
+	SchemaVersion  int                      `json:"schema_version"`
+	Workspace      string                   `json:"workspace"`
+	Ready          bool                     `json:"ready"`
+	Errors         []string                 `json:"errors"`
+	Warnings       []string                 `json:"warnings"`
+	RequireSafetyAuthorization bool          `json:"require_safety_authorization"`
+	SafetyBypasses []app.DoctorSafetyBypass `json:"safety_bypasses"`
+	StrictGate     doctorJSONStrictGate     `json:"strict_gate"`
 }
 
 type doctorJSONStrictGate struct {
@@ -1239,14 +1240,14 @@ type doctorJSONStrictGate struct {
 
 func printDoctorJSON(out io.Writer, workspace string, report app.DoctorReport, requireSafetyAuthorization bool) error {
 	payload := doctorJSONReport{
-		SchemaVersion:              1,
-		Workspace:                  workspace,
-		Ready:                      report.Ready,
-		Errors:                     append([]string{}, report.Errors...),
-		Warnings:                   append([]string{}, report.Warnings...),
-		SafetyBypasses:             append([]app.DoctorSafetyBypass{}, report.SafetyBypasses...),
-		StrictGate:                 doctorJSONStrictGateFor(report, requireSafetyAuthorization),
+		SchemaVersion:  1,
+		Workspace:      workspace,
+		Ready:          report.Ready,
+		Errors:         append([]string{}, report.Errors...),
+		Warnings:       append([]string{}, report.Warnings...),
 		RequireSafetyAuthorization: requireSafetyAuthorization,
+		SafetyBypasses: append([]app.DoctorSafetyBypass{}, report.SafetyBypasses...),
+		StrictGate:     doctorJSONStrictGateFor(report, requireSafetyAuthorization),
 	}
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
@@ -2017,6 +2018,11 @@ func runInteractiveWorkspace(ctx context.Context, root string, out io.Writer, pr
 			session.Send(tui.ReplaySnapshotMsg{Snapshot: snapshot})
 			return nil
 		}
+		// TUI display consumer: coalesce snapshot rebuilds to a 250ms
+		// window (each rebuild is a full replay re-decode; event-dense runs
+		// otherwise spend O(n²) CPU on redraws). The final stage-end
+		// snapshot still flushes, so the terminal state is always exact.
+		options = app.WrapSnapshotThrottle(options)
 		result, err := runWorkspaceWithOptions(runCtx, root, options)
 		if err != nil {
 			session.Quit()
@@ -3589,10 +3595,6 @@ func newReplayWorkbenchHandler(result app.ReplayResult, comparisons ...app.Repla
 	return newReplayWorkbenchHandlerWithOptions(replayWorkbenchHandlerOptions{}, result, comparisons...)
 }
 
-func newReplayWorkbenchHandlerWithDefaultSession(defaultSession replayWorkbenchSession, result app.ReplayResult, comparisons ...app.ReplayResult) http.Handler {
-	return newReplayWorkbenchHandlerWithOptions(replayWorkbenchHandlerOptions{DefaultSession: defaultSession}, result, comparisons...)
-}
-
 func newReplayWorkbenchHandlerWithOptions(options replayWorkbenchHandlerOptions, result app.ReplayResult, comparisons ...app.ReplayResult) http.Handler {
 	results := append([]app.ReplayResult{result}, comparisons...)
 	defaultSession := options.DefaultSession
@@ -4204,10 +4206,6 @@ type replayWorkbenchSession struct {
 	Endpoints     map[string]string `json:"endpoints"`
 }
 
-func replayFilterFromRequest(r *http.Request) replayTimelineFilter {
-	return replayFilterFromRequestWithDefault(r, nil)
-}
-
 func replayFilterFromRequestWithDefault(r *http.Request, defaults map[string]string) replayTimelineFilter {
 	query := r.URL.Query()
 	lane := replayWorkbenchQueryValue(query, defaults, "lane")
@@ -4220,10 +4218,6 @@ func replayFilterFromRequestWithDefault(r *http.Request, defaults map[string]str
 		Node:  replayWorkbenchQueryValue(query, defaults, "node"),
 		Edge:  replayWorkbenchQueryValue(query, defaults, "edge"),
 	}
-}
-
-func replayWorkbenchSessionFromRequest(r *http.Request, results []app.ReplayResult) replayWorkbenchSession {
-	return replayWorkbenchSessionFromRequestWithDefault(r, results, replayWorkbenchSession{})
 }
 
 func replayWorkbenchSessionFromRequestWithDefault(r *http.Request, results []app.ReplayResult, defaults replayWorkbenchSession) replayWorkbenchSession {
@@ -5059,10 +5053,6 @@ func printReplayJSONExport(out io.Writer, export replayExport) error {
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(export)
-}
-
-func printReplayJSONList(out io.Writer, results []app.ReplayResult) error {
-	return printReplayJSONExports(out, replayExportsFromResults(results))
 }
 
 func printReplayJSONListFiltered(out io.Writer, results []app.ReplayResult, filter replayTimelineFilter) error {

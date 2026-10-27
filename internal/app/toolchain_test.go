@@ -7038,7 +7038,6 @@ dependencies:
 	}
 }
 
-
 func TestExecuteToolchainInstallDispatchRequiresSafetyAuthorizationForDisabledBoundary(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "workspace")
 	if err := InitWorkspace(root); err != nil {
@@ -7264,7 +7263,6 @@ dependencies:
 		t.Fatalf("expected persisted safety warnings, got %#v", decoded.Warnings)
 	}
 }
-
 
 func TestListAndReadToolchainInstallDispatchExecutionsReadsAuditArtifacts(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "workspace")
@@ -7867,7 +7865,6 @@ func TestListAndReadToolchainInstallRetryDispatchExecutionsReadsAuditArtifacts(t
 		t.Fatalf("retry execution listing/reading must not execute command arrays, marker stat err=%v", err)
 	}
 }
-
 
 func TestCreateToolchainInstallOrchestrationExecuteRunsApprovedDispatchAndWritesAudit(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "workspace")
