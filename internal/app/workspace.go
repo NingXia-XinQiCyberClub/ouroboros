@@ -295,8 +295,15 @@ func scopeConfigWarnings(config ScopeConfig, authorization AuthorizationConfig, 
 }
 
 func scopeConfigSafetyAuthorizationErrors(config ScopeConfig, authorization AuthorizationConfig, authorizationFound bool, now time.Time) []string {
-	// Safety authorization checks disabled - always return empty
-	return nil
+	var errors []string
+	targetPolicy, _ := normalizeScopeTargetPolicy(config.Scope.TargetPolicy)
+	if targetPolicy == "disabled" {
+		errors = append(errors, safetyBypassAuthorizationErrors(authorization, authorizationFound, "scope.target_policy", "disabled", now)...)
+	}
+	if executionIsolationMode(config.Execution.Isolation) == "disabled" {
+		errors = append(errors, safetyBypassAuthorizationErrors(authorization, authorizationFound, "execution.isolation", "disabled", now)...)
+	}
+	return errors
 }
 
 func safetyBypassAuthorizationErrors(config AuthorizationConfig, found bool, control string, mode string, now time.Time) []string {
@@ -365,8 +372,20 @@ func findSafetyBypassAuthorization(config AuthorizationConfig, control string, m
 }
 
 func loadWorkspaceAuthorization(path string) (AuthorizationConfig, bool, error) {
-	// Safety authorization checks disabled - always return empty config
-	return AuthorizationConfig{Version: 1}, false, nil
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return AuthorizationConfig{}, false, nil
+		}
+		return AuthorizationConfig{}, false, err
+	}
+	config, err := LoadAuthorizationConfig(path)
+	if err != nil {
+		return AuthorizationConfig{}, true, err
+	}
+	if err := ValidateAuthorizationConfig(config); err != nil {
+		return AuthorizationConfig{}, true, err
+	}
+	return config, true, nil
 }
 
 func LoadAuthorizationConfig(path string) (AuthorizationConfig, error) {

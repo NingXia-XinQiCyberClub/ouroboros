@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"context"
@@ -1944,6 +1944,8 @@ func newRunCommand(out io.Writer) *cobra.Command {
 	cmd.Flags().StringSliceVar(&providerGenerateRequiredCapabilities, "provider-generate-required-capability", nil, "Required provider capability for run-integrated provider generation; repeat or comma-separate")
 	cmd.Flags().BoolVar(&providerGenerateStream, "provider-generate-stream", false, "Request streamed output for run-integrated provider generation and persist only safe stream metadata")
 	cmd.Flags().BoolVar(&providerGenerateToolPlanPreview, "provider-generate-tool-plan-preview", false, "Enable read-only metadata-only tool plan preview from provider generation output; does not execute tools, dispatch workers, or touch targets")
+	cmd.Flags().Float64Var(&providerGenerateMaxEstimatedCostUSD, "provider-generate-max-estimated-cost-usd", 0, "Maximum allowed estimated cost in USD for run-integrated provider generation")
+	cmd.Flags().BoolVar(&requireSafetyAuthorization, "require-safety-authorization", false, "Fail run when disabled safety boundaries lack current authorization.yaml metadata")
 	return cmd
 }
 

@@ -2068,7 +2068,9 @@ func managedBinaryTargetKinds(binary string, operation string, node compiler.Pla
 		}
 	case "port_scan":
 		if binary == "naabu" {
-			return managedBinaryNetworkTargetKinds()
+			// Port scanning accepts only explicit CIDR scope: a lone host scope
+			// keeps naabu offline, and host+CIDR resolves to the CIDR.
+			return []string{string(domain.TargetCIDR)}
 		}
 	case "dns_probe":
 		if binary == "dnsx" {
@@ -2279,8 +2281,11 @@ func managedBinaryCommandFor(request ToolExecutionRequest, binary string, operat
 		}
 	case "port_scan":
 		if binary == "naabu" {
-			if !managedBinaryNetworkTargetKind(target.Kind) {
+			if target.Kind != string(domain.TargetCIDR) {
 				return nil, false, nil
+			}
+			if !targetPolicyDisabled(request.ScopeTargetPolicy) && scopeTargetExcludedForRequest(request, target) {
+				return nil, true, fmt.Errorf("scope target %s is excluded for capability %s", target.Value, request.Node.Capability)
 			}
 			return []string{binary, "-json", "-host", target.Value}, true, nil
 		}

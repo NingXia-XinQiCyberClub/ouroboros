@@ -2956,7 +2956,10 @@ func readToolchainInstallDispatchFile(path string) (ToolchainInstallDispatch, er
 }
 
 func ExecuteToolchainInstallDispatch(root, dispatchPath string, options ToolchainInstallDispatchExecutionOptions) (ToolchainInstallDispatchExecution, error) {
-	doctor, err := doctorToolchainInstallRuntime(root)
+	if !options.Execute {
+		return ToolchainInstallDispatchExecution{}, fmt.Errorf("install dispatch execution requires explicit execute")
+	}
+	doctor, err := DoctorWorkspaceWithOptions(root, DoctorOptions{RequireSafetyAuthorization: true})
 	if err != nil {
 		return ToolchainInstallDispatchExecution{}, err
 	}
@@ -2978,6 +2981,9 @@ func ExecuteToolchainInstallDispatch(root, dispatchPath string, options Toolchai
 		Skipped:      append([]ToolchainInstallDispatchSkip(nil), dispatch.Skipped...),
 	}
 	for _, request := range dispatch.Ready {
+		if installRequestDisplayStatus(request.Status) != "approved" {
+			return execution, fmt.Errorf("install dispatch ready request must be approved: %s/%s status=%s", request.Pack, request.Dependency, installRequestDisplayStatus(request.Status))
+		}
 		result := ToolchainInstallDispatchExecutionResult{
 			RequestPath: request.Path,
 			Pack:        request.Pack,
