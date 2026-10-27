@@ -23,6 +23,8 @@ temp/
 # root-level build artifacts
 /ouro.exe
 /ouro
+/desktop.exe
+*.exe.sha256
 
 # SQLite runtime files
 *.db-shm
