@@ -15,15 +15,12 @@
 - `toolchains/`: bundled toolchain manifests with optional managed dependency metadata for appsec and artifact-analysis tools.
 - `configs/patterns/`: built-in strategy pattern YAML files.
 - `docs/progress/`: milestone progress records. Add or update one before marking a milestone complete.
-- `model/`: immutable upstream reference archives. Do not modify these files.
-- `.analysis/`: regenerated scratch extraction workspace for reference-code review only.
+- `assets/`: platform static assets.
 
 ## Brand Assets
 
 - `docs/assets/ouroboros-logo.png`: stable documentation logo path used by the root README.
-- `bf06867091a103548aa822bfd6f900ab.png`: original local source image currently kept at the repository root for provenance.
 
-Reference the stable `docs/assets/` path from project docs. Do not delete or overwrite the root source image unless the brand source of truth is intentionally moved.
 
 ## Build And Test
 

@@ -30,7 +30,7 @@ fi
 echo ""
 echo "📡 启动后端API服务器..."
 cd "$SCRIPT_DIR"
-nohup ./bin/ouro serve test-workspace --port 8080 > /tmp/ouro-api.log 2>&1 &
+nohup ./bin/ouro serve ./workspace --port 8080 > /tmp/ouro-api.log 2>&1 &
 BACKEND_PID=$!
 echo "   后端PID: $BACKEND_PID"
 

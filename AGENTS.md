@@ -98,7 +98,7 @@ Vite 浏览器预览仅限开发用途;产品运行时是打包后的 Electron�
 - Go 1.26(`gofmt`,测试只用标准库 `testing`——不用 testify);依赖:Cobra、gorilla/websocket、modernc.org/sqlite、Bubble Tea。
 - `gui/` 用 Node.js + **npm**(package-lock.json;不用 bun/yarn/pnpm)。
 - 冒烟脚本为 bash,需 POSIX shell(Windows 用 Git Bash);部分冒烟在 Windows 下 `skipIfWindows`。
-- 托管工具包按摘要固定;`model/` 与 `test-workspace/` 是产物/状态目录——不要手工改动。
+- 托管工具包按摘要固定;`workspace/` 等运行时状态目录不要手工改动。
 
 ## 测试与质量保障
 
